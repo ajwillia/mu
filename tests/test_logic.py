@@ -39,7 +39,7 @@ def test_find_microbit_no_ports():
     """
     with mock.patch('mu.logic.QSerialPortInfo.availablePorts',
                     return_value=[]):
-        assert mu.logic.find_microbit() is None
+        assert mu.logic.find_upython_device() is None
 
 
 def test_find_microbit_no_device():
@@ -51,7 +51,7 @@ def test_find_microbit_no_device():
     mock_port.vendorIdentifier = mock.MagicMock(return_value=999)
     with mock.patch('mu.logic.QSerialPortInfo.availablePorts',
                     return_value=[mock_port, ]):
-        assert mu.logic.find_microbit() is None
+        assert mu.logic.find_upython_device() is None
 
 
 def test_find_microbit_with_device():
@@ -67,7 +67,7 @@ def test_find_microbit_with_device():
     mock_port.portName = mock.MagicMock(return_value='COM0')
     with mock.patch('mu.logic.QSerialPortInfo.availablePorts',
                     return_value=[mock_port, ]):
-        assert mu.logic.find_microbit() == 'COM0'
+        assert mu.logic.find_upython_device() == 'COM0'
 
 
 def test_check_flake():
@@ -277,7 +277,7 @@ def test_flash_with_attached_device():
     """
     with mock.patch('mu.logic.uflash.hexlify', return_value=''), \
             mock.patch('mu.logic.uflash.embed_hex', return_value='foo'), \
-            mock.patch('mu.logic.uflash.find_microbit', return_value='bar'),\
+            mock.patch('mu.logic.uflash.find_upython_device', return_value='bar'),\
             mock.patch('mu.logic.os.path.exists', return_value=True),\
             mock.patch('mu.logic.uflash.save_hex', return_value=None) as s:
         view = mock.MagicMock()
@@ -298,7 +298,7 @@ def test_flash_user_specified_device_path():
     """
     with mock.patch('mu.logic.uflash.hexlify', return_value=''), \
             mock.patch('mu.logic.uflash.embed_hex', return_value='foo'), \
-            mock.patch('mu.logic.uflash.find_microbit', return_value=None),\
+            mock.patch('mu.logic.uflash.find_upython_device', return_value=None),\
             mock.patch('mu.logic.os.path.exists', return_value=True),\
             mock.patch('mu.logic.uflash.save_hex', return_value=None) as s:
         view = mock.MagicMock()
@@ -323,7 +323,7 @@ def test_flash_existing_user_specified_device_path():
     """
     with mock.patch('mu.logic.uflash.hexlify', return_value=''), \
             mock.patch('mu.logic.uflash.embed_hex', return_value='foo'), \
-            mock.patch('mu.logic.uflash.find_microbit', return_value=None),\
+            mock.patch('mu.logic.uflash.find_upython_device', return_value=None),\
             mock.patch('mu.logic.os.path.exists', return_value=True),\
             mock.patch('mu.logic.uflash.save_hex', return_value=None) as s:
         view = mock.MagicMock()
@@ -347,7 +347,7 @@ def test_flash_path_specified_does_not_exist():
     """
     with mock.patch('mu.logic.uflash.hexlify', return_value=''), \
             mock.patch('mu.logic.uflash.embed_hex', return_value='foo'), \
-            mock.patch('mu.logic.uflash.find_microbit', return_value=None),\
+            mock.patch('mu.logic.uflash.find_upython_device', return_value=None),\
             mock.patch('mu.logic.os.path.exists', return_value=False),\
             mock.patch('mu.logic.os.makedirs', return_value=None), \
             mock.patch('mu.logic.uflash.save_hex', return_value=None) as s:
@@ -376,7 +376,7 @@ def test_flash_without_device():
     """
     with mock.patch('mu.logic.uflash.hexlify', return_value=''), \
             mock.patch('mu.logic.uflash.embed_hex', return_value='foo'), \
-            mock.patch('mu.logic.uflash.find_microbit', return_value=None), \
+            mock.patch('mu.logic.uflash.find_upython_device', return_value=None), \
             mock.patch('mu.logic.uflash.save_hex', return_value=None) as s:
         view = mock.MagicMock()
         view.get_microbit_path = mock.MagicMock(return_value=None)
@@ -527,7 +527,7 @@ def test_add_repl_no_port():
     view = mock.MagicMock()
     view.show_message = mock.MagicMock()
     ed = mu.logic.Editor(view)
-    with mock.patch('mu.logic.find_microbit', return_value=False):
+    with mock.patch('mu.logic.find_upython_device', return_value=False):
         ed.add_repl()
     assert view.show_message.call_count == 1
     message = 'Could not find an attached BBC micro:bit.'
@@ -545,7 +545,7 @@ def test_add_repl_ioerror():
     ex = IOError('BOOM')
     view.add_repl = mock.MagicMock(side_effect=ex)
     ed = mu.logic.Editor(view)
-    with mock.patch('mu.logic.find_microbit', return_value='COM0'):
+    with mock.patch('mu.logic.find_upython_device', return_value='COM0'):
         ed.add_repl()
     assert view.show_message.call_count == 1
     assert view.show_message.call_args[0][0] == str(ex)
@@ -559,7 +559,7 @@ def test_add_repl_exception():
     ex = Exception('BOOM')
     view.add_repl = mock.MagicMock(side_effect=ex)
     ed = mu.logic.Editor(view)
-    with mock.patch('mu.logic.find_microbit', return_value='COM0'), \
+    with mock.patch('mu.logic.find_upython_device', return_value='COM0'), \
             mock.patch('mu.logic.logger', return_value=None) as logger:
         ed.add_repl()
         logger.error.assert_called_once_with(ex)
@@ -573,7 +573,7 @@ def test_add_repl():
     view.show_message = mock.MagicMock()
     view.add_repl = mock.MagicMock()
     ed = mu.logic.Editor(view)
-    with mock.patch('mu.logic.find_microbit', return_value='COM0'), \
+    with mock.patch('mu.logic.find_upython_device', return_value='COM0'), \
             mock.patch('os.name', 'nt'):
         ed.add_repl()
     assert view.show_message.call_count == 0
