@@ -66,7 +66,7 @@ def find_upython_device():
     """
     available_ports = QSerialPortInfo.availablePorts()
     try:
-        port = available_ports[0]
+        port = available_ports[4]
         logger.info('Using port {}'.format(port.portName()))
         return port.portName()
     except IndexError:

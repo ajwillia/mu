@@ -46,8 +46,9 @@ def find_upython_device():
     Finds the port to which the device is connected.
     """
     ports = list_serial_ports()
+    return ports[2][0]  # TODO hardcoded port for now; will need to work out how to autodetect or ask user
     for port in ports:
-        #if "VID:PID=0D28:0204" in port[2].upper():
+        if "VID:PID=0D28:0204" in port[2].upper():
             return port[0]
     return None
 
