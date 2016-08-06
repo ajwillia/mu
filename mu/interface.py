@@ -21,17 +21,16 @@ import keyword
 import os
 import re
 import logging
-from PyQt5.QtCore import QSize, Qt, pyqtSignal, QIODevice
+from PyQt5.QtCore import QSize, Qt, pyqtSignal, QIODevice, QUrl
 from PyQt5.QtWidgets import (QToolBar, QAction, QStackedWidget, QDesktopWidget,
                              QWidget, QVBoxLayout, QShortcut, QSplitter,
                              QTabWidget, QFileDialog, QMessageBox, QTextEdit,
                              QFrame, QListWidget, QGridLayout, QLabel, QMenu)
 from PyQt5.QtGui import QKeySequence, QColor, QTextCursor, QFontDatabase
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
-from PyQt5.QtSerialPort import QSerialPort
+from PyQt5.QtWebSockets import QWebSocket
 from mu.contrib import microfs
 from mu.resources import load_icon, load_stylesheet, load_font_data
-
 
 #: The default font size.
 DEFAULT_FONT_SIZE = 14
@@ -712,6 +711,18 @@ class Window(QStackedWidget):
         self.autosize_window()
 
 
+# class REPLWS(websocket.WebSocket):  # TODO - this will need to be reworked, including a service of some sort to receive
+#     def __init__(self, **options):
+#         self.replpane = options.pop('replpane')
+#         super().__init__(**options)
+#
+#     def recv_frame(self):
+#         frame = super().recv_frame()
+#         self.replpane.process_bytes(bytes(frame))
+#         print('yay! I got this frame: ', frame)
+#         return frame
+
+
 class REPLPane(QTextEdit):
     """
     REPL = Read, Evaluate, Print, Loop.
@@ -728,18 +739,22 @@ class REPLPane(QTextEdit):
         self.setAcceptRichText(False)
         self.setReadOnly(False)
         self.setObjectName('replpane')
+        self.ws = QWebSocket()
+        self.ws.open(QUrl("ws://192.168.1.177:8266/"))
+        self.ws.textMessageReceived.connect(self.process_bytes)
+        #self.ws = websocket.create_connection("ws://192.168.1.177:8266/", class_=REPLWS, replpane=self)
         # open the serial port
-        self.serial = QSerialPort(self)
-        self.serial.setPortName(port)
-        if self.serial.open(QIODevice.ReadWrite):
-            self.serial.setBaudRate(115200)
-            self.serial.readyRead.connect(self.on_serial_read)
-            # clear the text
-            self.clear()
-            # Send a Control-C
-            self.serial.write(b'\x03')
-        else:
-            raise IOError("Cannot connect to device on port {}".format(port))
+        #self.serial = QSerialPort(self)
+        #self.serial.setPortName(port)
+        #if self.serial.open(QIODevice.ReadWrite):
+        #     self.serial.setBaudRate(115200)
+        #     self.serial.readyRead.connect(self.on_serial_read)
+        #     # clear the text
+        #     self.clear()
+        #     # Send a Control-C
+        #     self.serial.write(b'\x03')
+        # else:
+        #     raise IOError("Cannot connect to device on port {}".format(port))
         self.set_theme(theme)
 
     def set_theme(self, theme):
@@ -764,18 +779,19 @@ class REPLPane(QTextEdit):
         Correctly encodes it and sends it to the connected device.
         """
         key = data.key()
-        msg = bytes(data.text(), 'utf8')
+        msg = data.text()
+        #msg = bytes(data.text(), 'utf8')
 
         if key == Qt.Key_Backspace:
-            msg = b'\b'
+            msg = '\b'
         elif key == Qt.Key_Up:
-            msg = b'\x1B[A'
+            msg = '\x1B[A'
         elif key == Qt.Key_Down:
-            msg = b'\x1B[B'
+            msg = '\x1B[B'
         elif key == Qt.Key_Right:
-            msg = b'\x1B[C'
+            msg = '\x1B[C'
         elif key == Qt.Key_Left:
-            msg = b'\x1B[D'
+            msg = '\x1B[D'
         # elif data.modifiers() == Qt.MetaModifier:
         #     # Handle the Control key.  I would've expected us to have to test
         #     # for Qt.ControlModifier, but on (my!) OSX Qt.MetaModifier does
@@ -785,13 +801,15 @@ class REPLPane(QTextEdit):
         #     if Qt.Key_A <= key <= Qt.Key_Z:
         #         # The microbit treats an input of \x01 as Ctrl+A, etc.
         #         msg = bytes([1 + key - Qt.Key_A])
-        self.serial.write(msg)
+        self.ws.sendTextMessage(msg)
+        #self.serial.write(msg)
 
     def process_bytes(self, bs):
         """
         Given some incoming bytes of data, work out how to handle / display
         them in the REPL widget.
         """
+        bs = bytes(bs, 'ascii')  # QtWebSocket seems to use string not bytes; can clean this up later
         tc = self.textCursor()
         logger.debug(bs)
         # The text cursor must be on the last line of the document. If it isn't
