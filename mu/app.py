@@ -70,6 +70,8 @@ def run():
     button_bar.connect("flash", editor.flash)
     button_bar.connect("files", editor.toggle_fs)
     button_bar.connect("repl", editor.toggle_repl)
+    button_bar.connect("debug", editor.toggle_debug)
+    button_bar.connect("step", editor.step)
     button_bar.connect("zoom-in", editor.zoom_in)
     button_bar.connect("zoom-out", editor.zoom_out)
     button_bar.connect("theme", editor.toggle_theme)

@@ -366,6 +366,10 @@ class ButtonBar(QToolBar):
                        tool_text="Access the file system on the micro:bit.")
         self.addAction(name="repl",
                        tool_text="Use the REPL to live code the micro:bit.")
+        self.addAction(name="debug",
+                       tool_text="Use the REPL to run this code line-by-line.")
+        self.addAction(name="step",
+                       tool_text="Run next line of code")
         self.addSeparator()
         self.addAction(name="zoom-in",
                        tool_text="Zoom in (to make the text bigger).")

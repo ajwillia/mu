@@ -437,6 +437,20 @@ class Editor:
                            "try again.")
             self._view.show_message(message, information)
 
+    def toggle_debug(self):
+        self.debug_tab = self._view.current_tab
+        if self.debug_tab is None:
+            # There is no active text editor so abort.
+            return
+        self.line_number = 0
+        self.toggle_repl()
+
+    def step(self):
+        code = self.debug_tab.text(self.line_number)
+        self.repl.send(bytes(code.rstrip('\n') + '\r', 'ascii'))
+        self.line_number += 1
+
+
     def toggle_theme(self):
         """
         Switches between themes (night or day).
