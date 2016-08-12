@@ -28,6 +28,7 @@ import tempfile
 import webbrowser
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtSerialPort import QSerialPortInfo
+from PyQt5.QtGui import QColor
 from pyflakes.api import check
 from pycodestyle import StyleGuide, Checker
 from mu.contrib import uflash, appdirs, microfs
@@ -264,7 +265,7 @@ class Editor:
                         else:
                             self._view.add_tab(path, text)
         if not self._view.tab_count:
-            py = 'from microbit import *\n\n# Write your code here :-)'
+            py = 'import esp\nesp.osdebug(None)\nprint("foo")\n\n# Write your code here :-)'
             self._view.add_tab(None, py)
         self._view.set_theme(self.theme)
 
@@ -443,12 +444,17 @@ class Editor:
             # There is no active text editor so abort.
             return
         self.line_number = 0
+        self.debug_tab.markerDefine(self.debug_tab.RightArrow, 8)
+        self.debug_tab.setMarkerBackgroundColor(QColor("#ee1111"), 8)
+        self.debug_tab.markerAdd(self.line_number, 8)
         self.toggle_repl()
 
     def step(self):
         code = self.debug_tab.text(self.line_number)
         self.repl.send(bytes(code.rstrip('\n') + '\r', 'ascii'))
+        self.debug_tab.markerDelete(self.line_number, 8)
         self.line_number += 1
+        self.debug_tab.markerAdd(self.line_number, 8)
 
 
     def toggle_theme(self):
