@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 import keyword
 import os
-import re
 import logging
 from PyQt5.QtCore import QSize, Qt, pyqtSignal, QIODevice
 from PyQt5.QtWidgets import (QToolBar, QAction, QStackedWidget, QDesktopWidget,
@@ -418,7 +417,7 @@ class FileTabs(QTabWidget):
         if (modified):
             msg = 'There is un-saved work, closing the tab will cause you ' \
                   'to lose it.'
-            if window.show_confirmation(msg) == QMessageBox.Cancel:
+            if window.show_confirmation(msg, parent=window) == QMessageBox.Cancel:
                 return
         super(FileTabs, self).removeTab(tab_id)
 
@@ -433,9 +432,6 @@ class Window(QStackedWidget):
 
     _zoom_in = pyqtSignal(int)
     _zoom_out = pyqtSignal(int)
-
-    def set_clipboard(self, clipboard):
-        self.clipboard = clipboard
 
     def zoom_in(self):
         """
@@ -550,7 +546,7 @@ class Window(QStackedWidget):
         """
         Adds the REPL pane to the application.
         """
-        self.repl = REPLPane(port=repl.port, clipboard=self.clipboard, theme=self.theme)
+        self.repl = REPLPane(port=repl.port, theme=self.theme)
         self.splitter.addWidget(self.repl)
         self.splitter.setSizes([66, 33])
         self.repl.setFocus()
@@ -725,9 +721,8 @@ class REPLPane(QTextEdit):
     The device MUST be flashed with MicroPython for this to work.
     """
 
-    def __init__(self, port, clipboard, theme='day', parent=None):
+    def __init__(self, port, theme='day', parent=None):
         super().__init__(parent)
-        self.clipboard = clipboard
         self.setFont(Font().load())
         self.setAcceptRichText(False)
         self.setReadOnly(False)
@@ -780,17 +775,14 @@ class REPLPane(QTextEdit):
             msg = b'\x1B[C'
         elif key == Qt.Key_Left:
             msg = b'\x1B[D'
-        elif data.modifiers() == Qt.ControlModifier:
-        #     # Handle the Control key.  I would've expected us to have to test
-        #     # for Qt.ControlModifier, but on (my!) OSX Qt.MetaModifier does
-        #     # correspond to the Control key.  I've read something that suggests
-        #     # that it's different on other platforms.
-        #     # see http://doc.qt.io/qt-5/qt.html#KeyboardModifier-enum
-            if key == Qt.Key_V:
-                msg = self.clipboard.text()
-            elif Qt.Key_A <= key <= Qt.Key_Z:
-        #         # The microbit treats an input of \x01 as Ctrl+A, etc.
-                 msg = bytes([1 + key - Qt.Key_A])
+        elif data.modifiers() == Qt.MetaModifier:
+            # Handle the Control key.  I would've expected us to have to test
+            # for Qt.ControlModifier, but on (my!) OSX Qt.MetaModifier does
+            # correspond to the Control key.  I've read something that suggests
+            # that it's different on other platforms.
+            if Qt.Key_A <= key <= Qt.Key_Z:
+                # The microbit treats an input of \x01 as Ctrl+A, etc.
+                msg = bytes([1 + key - Qt.Key_A])
         self.serial.write(msg)
 
     def process_bytes(self, bs):
@@ -799,54 +791,20 @@ class REPLPane(QTextEdit):
         them in the REPL widget.
         """
         tc = self.textCursor()
-        logger.debug(bs)
         # The text cursor must be on the last line of the document. If it isn't
         # then move it there.
         while tc.movePosition(QTextCursor.Down):
             pass
-        i = 0
-        while i < len(bs):
-            if bs[i] == 8:  # \b
+        for b in bs:
+            if b == 8:  # \b
                 tc.movePosition(QTextCursor.Left)
                 self.setTextCursor(tc)
-            elif bs[i] == ord('\r'):
+            elif b == 13:  # \r
                 pass
-            elif bs[i] == 0x1b and bs[i+1] == ord('['):  #VT100 cursor control
-                i += 2  # move index to after the [
-                m = re.search(r'(?P<count>[\d]*)(?P<action>[ABCDK])', bs[i:].decode('ascii', errors='ignore'))
-                i += m.end() - 1  #move to (almost) after the control seq (will increment at end of loop)
-
-                if m.group("count") == '':
-                    count = 1
-                else:
-                    count = int(m.group("count"))
-
-                if m.group("action") == "A":  #up
-                    tc.movePosition(QTextCursor.Up, n=count)
-                    self.setTextCursor(tc)
-                elif m.group("action") == "B":  #down
-                    tc.movePosition(QTextCursor.Down, n=count)
-                    self.setTextCursor(tc)
-                elif m.group("action") == "C":  #right
-                    tc.movePosition(QTextCursor.Right, n=count)
-                    self.setTextCursor(tc)
-                elif m.group("action") == "D":  #left
-                    tc.movePosition(QTextCursor.Left, n=count)
-                    self.setTextCursor(tc)
-                elif m.group("action") == "K":  #delete things
-                    if m.group("count") == "":  #delete to end of line
-                        tc.movePosition(QTextCursor.EndOfLine, mode=QTextCursor.KeepAnchor)
-                        tc.removeSelectedText()
-                        self.setTextCursor(tc)
-            elif bs[i] == ord('\n'):
-                tc.movePosition(QTextCursor.End)
-                self.setTextCursor(tc)
-                self.insertPlainText(chr(bs[i]))
             else:
                 tc.deleteChar()
                 self.setTextCursor(tc)
-                self.insertPlainText(chr(bs[i]))
-            i += 1
+                self.insertPlainText(chr(b))
         self.ensureCursorVisible()
 
     def clear(self):
