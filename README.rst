@@ -13,8 +13,8 @@ Installation
 Run Mu from source. You will need to install python3-pyqt5 and python3-serial
 
 ```
-$ sudo apt-get install python3-pyqt5
-$ sudo apt-get install python3-serial
+$ sudo apt-get install python3-pyqt5  
+$ sudo apt-get install python3-serial  
 ```
 
 Linux
