@@ -56,6 +56,7 @@ def run():
     splash.show()
     # Create the "window" we'll be looking at.
     editor_window = Window()
+    editor_window.set_clipboard(app.clipboard())
     # Create the "editor" that'll control the "window".
     editor = Editor(view=editor_window)
     # Setup the window.

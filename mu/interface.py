@@ -434,6 +434,9 @@ class Window(QStackedWidget):
     _zoom_in = pyqtSignal(int)
     _zoom_out = pyqtSignal(int)
 
+    def set_clipboard(self, clipboard):
+        self.clipboard = clipboard
+
     def zoom_in(self):
         """
         Handles zooming in.
@@ -547,7 +550,7 @@ class Window(QStackedWidget):
         """
         Adds the REPL pane to the application.
         """
-        self.repl = REPLPane(port=repl.port, theme=self.theme)
+        self.repl = REPLPane(port=repl.port, clipboard=self.clipboard, theme=self.theme)
         self.splitter.addWidget(self.repl)
         self.splitter.setSizes([66, 33])
         self.repl.setFocus()
@@ -722,8 +725,9 @@ class REPLPane(QTextEdit):
     The device MUST be flashed with MicroPython for this to work.
     """
 
-    def __init__(self, port, theme='day', parent=None):
+    def __init__(self, port, clipboard, theme='day', parent=None):
         super().__init__(parent)
+        self.clipboard = clipboard
         self.setFont(Font().load())
         self.setAcceptRichText(False)
         self.setReadOnly(False)
@@ -782,7 +786,9 @@ class REPLPane(QTextEdit):
         #     # correspond to the Control key.  I've read something that suggests
         #     # that it's different on other platforms.
         #     # see http://doc.qt.io/qt-5/qt.html#KeyboardModifier-enum
-             if Qt.Key_A <= key <= Qt.Key_Z:
+            if key == Qt.Key_V:
+                msg = self.clipboard.text()
+            elif Qt.Key_A <= key <= Qt.Key_Z:
         #         # The microbit treats an input of \x01 as Ctrl+A, etc.
                  msg = bytes([1 + key - Qt.Key_A])
         self.serial.write(msg)
