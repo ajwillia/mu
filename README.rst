@@ -3,7 +3,11 @@ Mu - a "micro" editor
 
 **This project works with Python 3 and the Qt UI library.**
 
-This fork is to add functionality to the FileSystem panes and some minor bug fixes.  Double-click on a directory to navigate into the directory.  Double-click on a file in the local "Files in your Computer" to open the file in the editor.  When you flash, perform a soft-reboot so the flash changes are made.
+This fork is to add functionality to the FileSystem panes and some minor bug fixes.  Double-click on a directory to navigate into the directory.  Double-click on a file in the local "Files in your Computer" to open the file in the editor.  When you flash, perform a soft-reboot so the code is refreshed on the micropython device.
+
+Fixed issue of files/repl not showing when one of them is already displayed.  
+
+Fixed issue in microfs when dragging a file from micropython device to local filesystem.
 
 
 
