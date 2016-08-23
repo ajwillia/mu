@@ -25,7 +25,8 @@ from PyQt5.QtCore import QSize, Qt, pyqtSignal, QIODevice
 from PyQt5.QtWidgets import (QToolBar, QAction, QStackedWidget, QDesktopWidget,
                              QWidget, QVBoxLayout, QShortcut, QSplitter,
                              QTabWidget, QFileDialog, QMessageBox, QTextEdit,
-                             QFrame, QListWidget, QGridLayout, QLabel, QMenu)
+                             QFrame, QListWidget, QGridLayout, QLabel, QMenu,
+                             QListWidgetItem)
 from PyQt5.QtGui import QKeySequence, QColor, QTextCursor, QFontDatabase
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
 from PyQt5.QtSerialPort import QSerialPort
@@ -335,6 +336,43 @@ class EditorPane(QsciScintilla):
             if self.markerLine(marker_id) == line:
                 return marker_id
 
+class FSButtonBar(QToolBar):
+    """
+    Represents the bar of buttons for file system navigation.
+    """
+    
+    def __init__(self, objectName):
+        super().__init__()
+        self.slots = {}
+        self.setMovable(False)
+        self.setIconSize(QSize(8, 8))
+        self.setToolButtonStyle(3)
+        self.setContextMenuPolicy(Qt.PreventContextMenu)
+        self.setObjectName(objectName)    
+        
+        self.addAction(name="home",
+                       tool_text="Go Back to Home Directory")
+        self.addAction(name="up", tool_text="Go Up a Level")            
+        
+    def addAction(self, name, tool_text):
+        """
+        Creates an action associated with an icon and name and adds it to the
+        widget's slots.
+        """
+        action = QAction(load_icon(name), name.capitalize(), self,
+                         toolTip=tool_text)
+        super().addAction(action)
+        self.slots[name] = action
+
+    def connect(self, name, handler, *shortcuts):
+        """
+        Connects a named slot to a handler function and optional hot-key
+        shortcuts.
+        """
+        self.slots[name].pyqtConfigure(triggered=handler)
+        for shortcut in shortcuts:
+            QShortcut(QKeySequence(shortcut),
+                      self.parentWidget()).activated.connect(handler)        
 
 class ButtonBar(QToolBar):
     """
@@ -540,7 +578,9 @@ class Window(QStackedWidget):
         """
         Adds the file system pane to the application.
         """
-        self.fs = FileSystemPane(self.splitter, home)
+        # passing reference to self so LocalFileList can open a tab with a 
+        # double-click
+        self.fs = FileSystemPane(self.splitter, home, self)
         self.splitter.addWidget(self.fs)
         self.splitter.setSizes([66, 33])
         self.fs.setFocus()
@@ -570,6 +610,7 @@ class Window(QStackedWidget):
         """
         self.repl.setParent(None)
         self.repl.deleteLater()
+        self.repl.close()
         self.repl = None
 
     def set_theme(self, theme):
@@ -695,6 +736,8 @@ class Window(QStackedWidget):
         self.setMinimumSize(926, 600)
 
         self.widget = QWidget()
+
+
         self.splitter = QSplitter(Qt.Vertical)
 
         widget_layout = QVBoxLayout()
@@ -735,6 +778,10 @@ class REPLPane(QTextEdit):
         # open the serial port
         self.serial = QSerialPort(self)
         self.serial.setPortName(port)
+        self.connect()
+        self.set_theme(theme)
+        
+    def connect(self):
         if self.serial.open(QIODevice.ReadWrite):
             self.serial.setBaudRate(115200)
             self.serial.readyRead.connect(self.on_serial_read)
@@ -743,9 +790,15 @@ class REPLPane(QTextEdit):
             # Send a Control-C
             self.serial.write(b'\x03')
         else:
-            raise IOError("Cannot connect to device on port {}".format(port))
-        self.set_theme(theme)
-
+            port_name = self.serial.portName()
+            raise IOError("Cannot connect to device on port {}".format(port_name))     
+        
+    def close(self):
+        self.serial.close()
+        
+    def soft_reboot(self):
+        self.serial.write(b'\x04')
+        
     def set_theme(self, theme):
         """
         Sets the theme / look for the REPL pane.
@@ -877,6 +930,31 @@ class MuFileList(QListWidget):
         sibling.setDisabled(False)
         self.setAcceptDrops(True)
         sibling.setAcceptDrops(True)
+        
+    def chdirHome(self):
+        self.current_dir = self.home
+        self.ls()
+        
+    def chdirUp(self):
+        if self.current_dir != self.home:
+            new_path = self.current_dir.split("/")[0:-1]
+            self.current_dir = "/".join(new_path)
+            self.ls()        
+            
+    def parse_ls(self, files):
+        self.clear()
+        for f in files:
+            item = QListWidgetItem(f[0])
+            if f[1] == "D":
+                item.setForeground(QColor('blue'))
+            else:
+                item.setForeground(QColor('green'))
+                
+            # utilize the QT::UserRole to keep metadata for this file.
+            item.setData(256,(f[1], os.path.join(self.current_dir, f[0])))
+            
+                
+            self.addItem(item)        
 
 
 class MicrobitFileList(MuFileList):
@@ -886,20 +964,36 @@ class MicrobitFileList(MuFileList):
 
     def __init__(self, home):
         super().__init__()
-        self.home = home
+        self.home = microfs.getcwd()
+        self.current_dir = self.home
         self.setDragDropMode(QListWidget.DragDrop)
+        self.itemDoubleClicked.connect(self.itemDoubleClickedEvent)
+        
+        self.label = QLabel()
+        self.label.setText('Files on your device')
+        self.toolbar = FSButtonBar("DeviceFS")
+        self.toolbar.connect("home", self.chdirHome)
+        self.toolbar.connect("up", self.chdirUp)
+        
+        self.ls()
+        
+    def ls(self):
+        microbit_files = microfs.ls2(microfs.get_serial(), d=self.current_dir)
+        microbit_files.sort(key=lambda x: (x[1], x[0]))
+        self.parse_ls(microbit_files)
 
     def dropEvent(self, event):
         source = event.source()
         self.disable(source)
         if isinstance(source, LocalFileList):
-            local_filename = os.path.join(self.home,
-                                          source.currentItem().text())
-            logger.info("Putting {}".format(local_filename))
+            local_filename = source.currentItem().text()
+            local_fullpath = source.currentItem().data(256)[1]
+            micro_fullpath = os.path.join(self.current_dir, local_filename)
+            logger.info("Putting {} to {}".format(local_fullpath, micro_fullpath))
             try:
                 with microfs.get_serial() as serial:
                     logger.info(serial.port)
-                    microfs.put(serial, local_filename)
+                    microfs.put2(serial, local_fullpath, target=micro_fullpath)
                 super().dropEvent(event)
             except Exception as ex:
                 logger.error(ex)
@@ -912,7 +1006,7 @@ class MicrobitFileList(MuFileList):
         if action == delete_action:
             self.setDisabled(True)
             self.setAcceptDrops(False)
-            microbit_filename = self.currentItem().text()
+            microbit_filename = self.currentItem().data(256)[1]
             logger.info("Deleting {}".format(microbit_filename))
             try:
                 with microfs.get_serial() as serial:
@@ -923,6 +1017,16 @@ class MicrobitFileList(MuFileList):
                 logger.error(ex)
             self.setDisabled(False)
             self.setAcceptDrops(True)
+            
+    def itemDoubleClickedEvent(self, event):
+        item = self.currentItem()
+        if item.data(256)[0] == "F":
+            pass
+        else:
+            # directory; get new listing
+            d = item.text()
+            self.current_dir += "/" + d
+            self.ls()       
 
 
 class LocalFileList(MuFileList):
@@ -930,28 +1034,105 @@ class LocalFileList(MuFileList):
     Represents a list of files in the Mu directory on the local machine.
     """
 
-    def __init__(self, home):
+    def __init__(self, home, window):
         super().__init__()
         self.home = home
+        self.window = window
+        self.current_dir = self.home
         self.setDragDropMode(QListWidget.DragDrop)
+        self.label = QLabel()
+        self.label.setText('Files on your Computer')
+        
+        self.itemDoubleClicked.connect(self.itemDoubleClickedEvent)
+        
+        self.toolbar = FSButtonBar("LocalFS")
+        self.toolbar.connect("home", self.chdirHome)
+        self.toolbar.connect("up", self.chdirUp)        
+        
+        self.ls()
+        
+    def ls(self):
+        local_files = []
+        for f in os.listdir(self.current_dir):
+            full_path = os.path.join(self.current_dir, f)
+            if not f.startswith("."):
+                if os.path.isfile(full_path):
+                    local_files.append((f, 'F'))
+                else:
+                    local_files.append((f, 'D'))
+                
+        local_files.sort(key=lambda x: (x[1], x[0]))
+        self.parse_ls(local_files)        
 
     def dropEvent(self, event):
         source = event.source()
         self.disable(source)
         if isinstance(source, MicrobitFileList):
             microbit_filename = source.currentItem().text()
-            local_filename = os.path.join(self.home,
+            microbit_fullpath = source.currentItem().data(256)[1]
+            local_fullpath = os.path.join(self.current_dir,
                                           microbit_filename)
-            logger.debug("Getting {} to {}".format(microbit_filename,
-                                                   local_filename))
+            logger.debug("Getting {} to {}".format(microbit_fullpath,
+                                                   local_fullpath))
             try:
                 with microfs.get_serial() as serial:
                     logger.info(serial.port)
-                    microfs.get(serial, microbit_filename, local_filename)
+                    microfs.get(serial, microbit_fullpath, target=local_fullpath)
                 super().dropEvent(event)
             except Exception as ex:
                 logger.error(ex)
+        self.ls()
         self.enable(source)
+        
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        delete_action = menu.addAction("Delete (cannot be undone)")
+        action = menu.exec_(self.mapToGlobal(event.pos()))
+        if action == delete_action:
+            self.setDisabled(True)
+            self.setAcceptDrops(False)
+            local_filename = self.currentItem().data(256)[1]
+            logger.info("Deleting {} from local system".format(local_filename))
+            try:
+                os.remove(local_filename)
+                self.takeItem(self.currentRow())
+            except Exception as ex:
+                logger.error(ex)
+            self.setDisabled(False)
+            self.setAcceptDrops(True)
+                    
+        
+    def itemDoubleClickedEvent(self, event):
+        item = self.currentItem()
+        if item.data(256)[0] == "F":
+            # read the file and load it into a tab; a bit duplicative of the
+            # load method in logic.Editor
+            path = item.data(256)[1]
+            logger.info('Loading script from: {}'.format(path))
+            try:
+                if path.endswith('.py'):
+                    # Open the file, read the textual content and set the name as
+                    # the path to the file.
+                    with open(path) as f:
+                        text = f.read()
+                    name = path
+                else:
+                    # Open the hex, extract the Python script therein and set the
+                    # name to None, thus forcing the user to work out what to name
+                    # the recovered script.
+                    with open(path) as f:
+                        text = uflash.extract_script(f.read())
+                    name = None
+            except FileNotFoundError:
+                pass
+            else:
+                logger.debug(text)
+                self.window.add_tab(name, text)            
+        else:
+            # directory; get new listing
+            d = item.text()
+            self.current_dir += "/" + d
+            self.ls()         
 
 
 class FileSystemPane(QFrame):
@@ -961,45 +1142,31 @@ class FileSystemPane(QFrame):
     can be selected for deletion.
     """
 
-    def __init__(self, parent, home):
+    def __init__(self, parent, home, window):
         super().__init__(parent)
         self.home = home
+        self.window = window
         self.font = Font().load()
-        microbit_fs = MicrobitFileList(home)
-        local_fs = LocalFileList(home)
+        
+        self.microbit_fs = MicrobitFileList(home)
+        self.local_fs = LocalFileList(home, self.window)
+        
         layout = QGridLayout()
         self.setLayout(layout)
-        microbit_label = QLabel()
-        microbit_label.setText('Files on your micro:bit:')
-        local_label = QLabel()
-        local_label.setText('Files on your computer:')
-        self.microbit_label = microbit_label
-        self.local_label = local_label
-        self.microbit_fs = microbit_fs
-        self.local_fs = local_fs
+        
         self.set_font_size()
-        layout.addWidget(microbit_label, 0, 0)
-        layout.addWidget(local_label, 0, 1)
-        layout.addWidget(microbit_fs, 1, 0)
-        layout.addWidget(local_fs, 1, 1)
-        self.ls()
-
-    def ls(self):
-        """
-        Gets a list of the files on the micro:bit.
-
-        Naive implementation for simplicity's sake.
-        """
-        self.microbit_fs.clear()
-        self.local_fs.clear()
-        microbit_files = microfs.ls(microfs.get_serial())
-        for f in microbit_files:
-            self.microbit_fs.addItem(f)
-        local_files = [f for f in os.listdir(self.home)
-                       if os.path.isfile(os.path.join(self.home, f))]
-        local_files.sort()
-        for f in local_files:
-            self.local_fs.addItem(f)
+        
+        #microbit_fs_bb = FSButtonBar('MicroBit FS')
+        local_fs_bb = FSButtonBar('Local FS')
+        
+        
+        layout.addWidget(self.microbit_fs.label, 0, 0)
+        layout.addWidget(self.local_fs.label, 0, 1)
+        layout.addWidget(self.microbit_fs.toolbar, 1, 0)
+        layout.addWidget(self.local_fs.toolbar, 1, 1)
+        layout.addWidget(self.microbit_fs, 2, 0)
+        layout.addWidget(self.local_fs, 2, 1)
+        
 
     def set_theme(self, theme):
         """
@@ -1015,8 +1182,9 @@ class FileSystemPane(QFrame):
         Sets the font size for all the textual elements in this pane.
         """
         self.font.setPointSize(new_size)
-        self.microbit_label.setFont(self.font)
-        self.local_label.setFont(self.font)
+        self.microbit_fs.label.setFont(self.font)
+        
+        self.local_fs.label.setFont(self.font)
         self.microbit_fs.setFont(self.font)
         self.local_fs.setFont(self.font)
 
