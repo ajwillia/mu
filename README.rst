@@ -3,9 +3,9 @@ Mu - a "micro" editor
 
 **This project works with Python 3 and the Qt UI library.**
 
-This fork is basically a hack providing some extra features targeted at the ESP8266
-running MicroPython. In particular control characters are supported in the REPL including
-ctrl-V (paste). It has been tested only under Linux.
+This fork is to add functionality to the FileSystem panes and some minor bug fixes.  Double-click on a directory to navigate into the directory.  Double-click on a file in the local "Files in your Computer" to open the file in the editor.  When you flash, perform a soft-reboot so the flash changes are made.
+
+
 
 Installation
 ------------
