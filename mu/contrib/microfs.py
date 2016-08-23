@@ -104,9 +104,7 @@ def execute(commands, serial=None):
         response = bytearray()
         while not response.endswith(b'\x04>'):  # Read until prompt.
             response.extend(serial.read_all())
-        
         out, err = response[2:-2].split(b'\x04', 1)  # Split stdout, stderr
-        
         result += out
         if err:
             return b'', err
@@ -140,43 +138,6 @@ def ls(serial):
     if err:
         raise IOError(clean_error(err))
     return ast.literal_eval(out.decode('utf-8'))
-
-def ls2(serial, d=None):
-    """
-        Returns a list of tuples of the files/directories on the connected 
-        device or raises an IOError if there's a problem.
-        
-        the tuple = (file_or_directory, F_or_D) where F=file, D=Directory
-    """
-    command = """
-import os
-d="{}"
-files = []
-if d == "None":
-    d = os.getcwd()
-for f in os.listdir(d):
-    if os.stat(d + "/" + f)[0] == 16384:
-        files.append((f,"D"))
-    else:
-        files.append((f,"F"))
-print(files)\n""".format(d)
-
-    commands = [command, ]
-
-    out, err = execute(commands, serial)
-
-    if err:
-        raise IOError(clean_error(err))
-    return ast.literal_eval(out.decode('utf-8')) 
-
-def getcwd(serial=None):
-    out, err = execute(['import os',
-                        'print(os.getcwd())'], serial)
-    if err:
-        raise IOError(clean_error(err))
-    
-    return out.decode('utf-8').strip()   
-    
 
 
 def rm(serial, filename):
@@ -224,39 +185,6 @@ def put(serial, filename):
         raise IOError(clean_error(err))
     return True
 
-def put2(serial, filename, target=None):
-    """
-    Puts a referenced file on the LOCAL file system onto the
-    file system on the BBC micro:bit.
-
-    Returns True for success or raises an IOError if there's a problem.
-    """
-    if target is None:
-        target = os.path.basename(filename)
-        
-
-    if not os.path.isfile(filename):
-        raise IOError('No such file.')
-    with open(filename, 'rb') as local:
-        content = local.read()
-    #filename = os.path.basename(filename)
-    commands = [
-        "fd = open('{}', 'wb')".format(target),
-        "f = fd.write",
-    ]
-    while content:
-        line = content[:64]
-        if PY2:
-            commands.append('f(b' + repr(line) + ')')
-        else:
-            commands.append('f(' + repr(line) + ')')
-        content = content[64:]
-    commands.append('fd.close()')
-    out, err = execute(commands, serial)
-    if err:
-        raise IOError(clean_error(err))
-    return True
-
 
 def get(serial, filename, target=None):
     """
@@ -268,7 +196,7 @@ def get(serial, filename, target=None):
     if target is None:
         target = filename
     commands = [
-        "from machine import UART",
+        "from microbit import uart",
         "f = open('{}', 'rb')".format(filename),
         "r = f.read",
         "result = True",
@@ -331,6 +259,3 @@ def main(argv=None):
     except Exception as ex:
         # The exception of no return. Print exception information.
         print(ex)
-        
-if __name__ == "__main__":
-    main()

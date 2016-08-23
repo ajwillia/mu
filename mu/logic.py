@@ -42,7 +42,7 @@ MICROBIT_VID = 3368
 #: The user's home directory.
 HOME_DIRECTORY = os.path.expanduser('~')
 #: The default directory for Python scripts.
-PYTHON_DIRECTORY = os.path.join(HOME_DIRECTORY, 'wipy')
+PYTHON_DIRECTORY = os.path.join(HOME_DIRECTORY, 'python')
 #: The default directory for application data.
 DATA_DIR = appdirs.user_data_dir('mu', 'python')
 #: The default directory for application logs.
@@ -55,8 +55,6 @@ LOG_FILE = os.path.join(LOG_DIR, 'mu.log')
 STYLE_REGEX = re.compile(r'.*:(\d+):(\d+):\s+(.*)')
 #: Regex to match flake8 output.
 FLAKE_REGEX = re.compile(r'.*:(\d+):\s+(.*)')
-
-SOFT_REBOOT_ON_FLASH = True
 
 
 logger = logging.getLogger(__name__)
@@ -275,33 +273,7 @@ class Editor:
         self.save()  # save current script to disk
         logger.debug('Python script file:')
         logger.debug(tab.path)
-        
-        # If the repl is active, close the session to flash
-        if SOFT_REBOOT_ON_FLASH:
-            restore_repl = False
-            if self.repl is not None:
-                restore_repl = True
-                self.toggle_repl()
-
-        # see if there is a filesystem tab; if so, get the current directory
-        # from the microcontroller fs and flash to there
-        if self.fs:
-            microbit_dir = self._view.fs.microbit_fs.current_dir
-            filename = os.path.basename(tab.path)
-            target = os.path.join(microbit_dir, filename)
-        else:
-            target = None
-        microfs.put2(microfs.get_serial(), tab.path, target=target)
-        
-        # if there was a repl session before the flash, restore it and send
-        # a soft reboot so the flash change will take affect
-        if SOFT_REBOOT_ON_FLASH:
-            if restore_repl:
-                self.toggle_repl()
-                self._view.repl.soft_reboot()
-            else:
-                self.toggle_repl()
-                self._view.repl.soft_reboot()
+        microfs.put(microfs.get_serial(), tab.path)
 
     def add_fs(self):
         """
@@ -341,11 +313,11 @@ class Editor:
         """
         if self.repl is not None:
             self.remove_repl()
-        
-        if self.fs is None:
-            self.add_fs()
         else:
-            self.remove_fs()
+            if self.fs is None:
+                self.add_fs()
+            else:
+                self.remove_fs()
 
     def add_repl(self):
         """
@@ -395,11 +367,11 @@ class Editor:
         """
         if self.fs is not None:
             self.remove_fs()
-
-        if self.repl is None:
-            self.add_repl()
         else:
-            self.remove_repl()
+            if self.repl is None:
+                self.add_repl()
+            else:
+                self.remove_repl()
 
     def toggle_theme(self):
         """
@@ -418,13 +390,12 @@ class Editor:
         """
         self._view.add_tab(None, '')
 
-    def load(self, path=None):
+    def load(self):
         """
         Loads a Python file from the file system or extracts a Python sccript
         from a hex file.
         """
-        if path is None:
-            path = self._view.get_load_path(PYTHON_DIRECTORY)
+        path = self._view.get_load_path(PYTHON_DIRECTORY)
         logger.info('Loading script from: {}'.format(path))
         try:
             if path.endswith('.py'):
