@@ -283,15 +283,8 @@ class Editor:
                 restore_repl = True
                 self.toggle_repl()
 
-        # see if there is a filesystem tab; if so, get the current directory
-        # from the microcontroller fs and flash to there
-        if self.fs:
-            microbit_dir = self._view.fs.microbit_fs.current_dir
-            filename = os.path.basename(tab.path)
-            target = os.path.join(microbit_dir, filename)
-        else:
-            target = None
-        microfs.put2(microfs.get_serial(), tab.path, target=target)
+            
+        microfs.put(microfs.get_serial(), tab.path)
         
         # if there was a repl session before the flash, restore it and send
         # a soft reboot so the flash change will take affect

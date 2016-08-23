@@ -268,7 +268,7 @@ def get(serial, filename, target=None):
     if target is None:
         target = filename
     commands = [
-        "from machine import UART",
+        "from machine import uart",
         "f = open('{}', 'rb')".format(filename),
         "r = f.read",
         "result = True",

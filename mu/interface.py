@@ -1084,24 +1084,6 @@ class LocalFileList(MuFileList):
         self.ls()
         self.enable(source)
         
-    def contextMenuEvent(self, event):
-        menu = QMenu(self)
-        delete_action = menu.addAction("Delete (cannot be undone)")
-        action = menu.exec_(self.mapToGlobal(event.pos()))
-        if action == delete_action:
-            self.setDisabled(True)
-            self.setAcceptDrops(False)
-            local_filename = self.currentItem().data(256)[1]
-            logger.info("Deleting {} from local system".format(local_filename))
-            try:
-                os.remove(local_filename)
-                self.takeItem(self.currentRow())
-            except Exception as ex:
-                logger.error(ex)
-            self.setDisabled(False)
-            self.setAcceptDrops(True)
-                    
-        
     def itemDoubleClickedEvent(self, event):
         item = self.currentItem()
         if item.data(256)[0] == "F":
