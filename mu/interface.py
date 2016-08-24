@@ -580,7 +580,7 @@ class Window(QStackedWidget):
         """
         # passing reference to self so LocalFileList can open a tab with a 
         # double-click
-        self.fs = FileSystemPane(self.splitter, home, self)
+        self.fs = FileSystemPane(self.splitter, home)
         self.splitter.addWidget(self.fs)
         self.splitter.setSizes([66, 33])
         self.fs.setFocus()
@@ -1034,10 +1034,9 @@ class LocalFileList(MuFileList):
     Represents a list of files in the Mu directory on the local machine.
     """
 
-    def __init__(self, home, window):
+    def __init__(self, home):
         super().__init__()
         self.home = home
-        self.window = window
         self.current_dir = self.home
         self.setDragDropMode(QListWidget.DragDrop)
         self.label = QLabel()
@@ -1128,14 +1127,13 @@ class FileSystemPane(QFrame):
     can be selected for deletion.
     """
 
-    def __init__(self, parent, home, window):
+    def __init__(self, parent, home):
         super().__init__(parent)
         self.home = home
-        self.window = window
         self.font = Font().load()
         
         self.microbit_fs = MicrobitFileList(home)
-        self.local_fs = LocalFileList(home, self.window)
+        self.local_fs = LocalFileList(home)
         
         layout = QGridLayout()
         self.setLayout(layout)

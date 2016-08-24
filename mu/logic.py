@@ -282,8 +282,10 @@ class Editor:
             if self.repl is not None:
                 restore_repl = True
                 self.toggle_repl()
-            
-        microfs.put(microfs.get_serial(), tab.path)
+        filename = os.path.basename(tab.path)
+        micro_path = self._view.fs.microbit_fs.current_dir
+        micro_fullpath = os.path.join(micro_path, filename)
+        microfs.put2(microfs.get_serial(), tab.path, target=micro_fullpath)
         
         # if there was a repl session before the flash, restore it and send
         # a soft reboot so the flash change will take affect
