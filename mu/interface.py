@@ -812,6 +812,7 @@ class REPLPane(QTextEdit):
         self.serial = QSerialPort(self)
         self.serial.setPortName(port)
         self.connect()
+        self.connected = True
         self.set_theme(theme)
         
     def connect(self):
@@ -822,12 +823,14 @@ class REPLPane(QTextEdit):
             self.clear()
             # Send a Control-C
             self.serial.write(b'\x03')
+            self.connected = True
         else:
             port_name = self.serial.portName()
             raise IOError("Cannot connect to device on port {}".format(port_name))     
         
     def close(self):
         self.serial.close()
+        self.connected = False
         
     def soft_reboot(self):
         self.serial.write(b'\x04')

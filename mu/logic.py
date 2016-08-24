@@ -273,8 +273,6 @@ class Editor:
             # There is no active text editor.
             return
         self.save()  # save current script to disk
-        logger.debug('Python script file:')
-        logger.debug(tab.path)
         
         # If the repl is active, close the session to flash
         if SOFT_REBOOT_ON_FLASH:
@@ -282,18 +280,20 @@ class Editor:
             if self.repl is not None:
                 restore_repl = True
                 self.toggle_repl()
-        filename = os.path.basename(tab.path)
-        micro_path = self._view.fs.microbit_fs.current_dir
-        micro_fullpath = os.path.join(micro_path, filename)
-        microfs.put2(microfs.get_serial(), tab.path, target=micro_fullpath)
+                
+        if self.fs:
+            filename = os.path.basename(tab.path)
+            micro_path = self._view.fs.microbit_fs.current_dir
+            target = os.path.join(micro_path, filename)
+            microfs.put2(microfs.get_serial(), tab.path, target=target)
+            self._view.fs.microbit_fs.ls()    # update the fs to reflect the flashed file
+        else:
+            microfs.put2(microfs.get_serial(), tab.path, target=None)
         
         # if there was a repl session before the flash, restore it and send
         # a soft reboot so the flash change will take affect
         if SOFT_REBOOT_ON_FLASH:
             if restore_repl:
-                self.toggle_repl()
-                self._view.repl.soft_reboot()
-            else:
                 self.toggle_repl()
                 self._view.repl.soft_reboot()
 
