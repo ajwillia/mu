@@ -471,6 +471,16 @@ class Window(QStackedWidget):
 
     _zoom_in = pyqtSignal(int)
     _zoom_out = pyqtSignal(int)
+    
+    fs = None
+    repl = None
+    
+    fs_splitter_index = None    # splitter index of fs widget for restoration
+    repl_splitter_index = None  # splitter index of repl for widget restoration
+    
+    # save the state so size changes persists
+    fs_splitter_state = None    
+    repl_splitter_state = None
 
     def set_clipboard(self, clipboard):
         self.clipboard = clipboard
@@ -580,38 +590,61 @@ class Window(QStackedWidget):
         """
         # passing reference to self so LocalFileList can open a tab with a 
         # double-click
-        self.fs = FileSystemPane(self.splitter, home)
-        self.splitter.addWidget(self.fs)
-        self.splitter.setSizes([66, 33])
-        self.fs.setFocus()
-        self.connect_zoom(self.fs)
+        if self.fs is None:
+            self.fs = FileSystemPane(self.splitter, home, self)
+            self.splitter.addWidget(self.fs)
+            # save the index of the fs pane
+            self.fs_splitter_index = self.splitter.indexOf(self.fs)
+            
+            if self.splitter.count() == 2:
+                self.splitter.setSizes([66, 33])
+            else:
+                self.splitter.setSizes([66, 0, 33])
+                
+            self.fs.setFocus()
+            self.connect_zoom(self.fs)
+        else:
+            self.fs.show()
+            self.fs.setFocus()
+            self.splitter.restoreState(self.fs_splitter_state)
 
     def add_repl(self, repl):
         """
         Adds the REPL pane to the application.
         """
-        self.repl = REPLPane(port=repl.port, clipboard=self.clipboard, theme=self.theme)
-        self.splitter.addWidget(self.repl)
-        self.splitter.setSizes([66, 33])
-        self.repl.setFocus()
-        self.connect_zoom(self.repl)
+        if self.repl is None:
+            self.repl = REPLPane(port=repl.port, clipboard=self.clipboard, theme=self.theme)
+            self.splitter.addWidget(self.repl)
+            self.repl_splitter_index = self.splitter.indexOf(self.repl)
+            if self.splitter.count() == 2:
+                self.splitter.setSizes([66, 33])
+            else:
+                self.splitter.setSizes([66, 0, 33])
+                
+            self.repl.setFocus()
+            self.connect_zoom(self.repl)
+        else:
+            self.repl.connect()
+            self.repl.show()
+            self.repl.setFocus()
+            self.splitter.restoreState(self.repl_splitter_state)
 
     def remove_filesystem(self):
         """
         Removes the file system pane from the application.
         """
-        self.fs.setParent(None)
-        self.fs.deleteLater()
-        self.fs = None
+        # save the splitter state for when we restore the fs pane
+        self.fs_splitter_state = self.splitter.saveState()
+        self.fs.hide()
 
     def remove_repl(self):
         """
         Removes the REPL pane from the application.
         """
-        self.repl.setParent(None)
-        self.repl.deleteLater()
+        # save the splitter state for when we restore the repl pane
+        self.repl_splitter_state = self.splitter.saveState()
         self.repl.close()
-        self.repl = None
+        self.repl.hide()
 
     def set_theme(self, theme):
         """
@@ -962,8 +995,9 @@ class MicrobitFileList(MuFileList):
     Represents a list of files on the micro:bit.
     """
 
-    def __init__(self, home):
+    def __init__(self, home, window):
         super().__init__()
+        self.window = window
         self.home = microfs.getcwd()
         self.current_dir = self.home
         self.setDragDropMode(QListWidget.DragDrop)
@@ -1034,8 +1068,9 @@ class LocalFileList(MuFileList):
     Represents a list of files in the Mu directory on the local machine.
     """
 
-    def __init__(self, home):
+    def __init__(self, home, window):
         super().__init__()
+        self.window = window
         self.home = home
         self.current_dir = self.home
         self.setDragDropMode(QListWidget.DragDrop)
@@ -1127,13 +1162,14 @@ class FileSystemPane(QFrame):
     can be selected for deletion.
     """
 
-    def __init__(self, parent, home):
+    def __init__(self, parent, home, window):
         super().__init__(parent)
         self.home = home
         self.font = Font().load()
+        self.window = window
         
-        self.microbit_fs = MicrobitFileList(home)
-        self.local_fs = LocalFileList(home)
+        self.microbit_fs = MicrobitFileList(home, self.window)
+        self.local_fs = LocalFileList(home, self.window)
         
         layout = QGridLayout()
         self.setLayout(layout)
