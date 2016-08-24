@@ -42,7 +42,7 @@ MICROBIT_VID = 3368
 #: The user's home directory.
 HOME_DIRECTORY = os.path.expanduser('~')
 #: The default directory for Python scripts.
-PYTHON_DIRECTORY = os.path.join(HOME_DIRECTORY, 'python')
+PYTHON_DIRECTORY = os.path.join(HOME_DIRECTORY, 'wipy')
 #: The default directory for application data.
 DATA_DIR = appdirs.user_data_dir('mu', 'python')
 #: The default directory for application logs.
@@ -55,6 +55,8 @@ LOG_FILE = os.path.join(LOG_DIR, 'mu.log')
 STYLE_REGEX = re.compile(r'.*:(\d+):(\d+):\s+(.*)')
 #: Regex to match flake8 output.
 FLAKE_REGEX = re.compile(r'.*:(\d+):\s+(.*)')
+
+SOFT_REBOOT_ON_FLASH = True
 
 
 logger = logging.getLogger(__name__)
@@ -273,7 +275,6 @@ class Editor:
         self.save()  # save current script to disk
         logger.debug('Python script file:')
         logger.debug(tab.path)
-<<<<<<< HEAD
         
         # If the repl is active, close the session to flash
         if SOFT_REBOOT_ON_FLASH:
@@ -293,9 +294,6 @@ class Editor:
             else:
                 self.toggle_repl()
                 self._view.repl.soft_reboot()
-=======
-        microfs.put(microfs.get_serial(), tab.path)
->>>>>>> refs/remotes/origin/fixes_filesystem_navigation
 
     def add_fs(self):
         """
@@ -335,11 +333,11 @@ class Editor:
         """
         if self.repl is not None:
             self.remove_repl()
+        
+        if self.fs is None:
+            self.add_fs()
         else:
-            if self.fs is None:
-                self.add_fs()
-            else:
-                self.remove_fs()
+            self.remove_fs()
 
     def add_repl(self):
         """
@@ -389,11 +387,11 @@ class Editor:
         """
         if self.fs is not None:
             self.remove_fs()
+
+        if self.repl is None:
+            self.add_repl()
         else:
-            if self.repl is None:
-                self.add_repl()
-            else:
-                self.remove_repl()
+            self.remove_repl()
 
     def toggle_theme(self):
         """
@@ -412,12 +410,13 @@ class Editor:
         """
         self._view.add_tab(None, '')
 
-    def load(self):
+    def load(self, path=None):
         """
         Loads a Python file from the file system or extracts a Python sccript
         from a hex file.
         """
-        path = self._view.get_load_path(PYTHON_DIRECTORY)
+        if path is None:
+            path = self._view.get_load_path(PYTHON_DIRECTORY)
         logger.info('Loading script from: {}'.format(path))
         try:
             if path.endswith('.py'):
