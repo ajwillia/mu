@@ -282,7 +282,6 @@ class Editor:
             if self.repl is not None:
                 restore_repl = True
                 self.toggle_repl()
-
             
         microfs.put(microfs.get_serial(), tab.path)
         

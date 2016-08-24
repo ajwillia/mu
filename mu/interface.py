@@ -1085,6 +1085,9 @@ class LocalFileList(MuFileList):
         self.enable(source)
         
     def itemDoubleClickedEvent(self, event):
+        """
+        Double-Click event catcher        
+        """
         item = self.currentItem()
         if item.data(256)[0] == "F":
             # read the file and load it into a tab; a bit duplicative of the
@@ -1187,3 +1190,5 @@ class FileSystemPane(QFrame):
         old_size = self.font.pointSize()
         new_size = max(old_size - delta, 4)
         self.set_font_size(new_size)
+        
+

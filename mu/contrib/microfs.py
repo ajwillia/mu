@@ -178,7 +178,6 @@ def getcwd(serial=None):
     return out.decode('utf-8').strip()   
     
 
-
 def rm(serial, filename):
     """
     Removes a referenced file on the micro:bit.
