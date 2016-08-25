@@ -54,15 +54,20 @@ def run():
     # Display a friendly "splash" icon.
     splash = QSplashScreen(load_pixmap('icon'))
     splash.show()
+    splash.showMessage("Connecting to device on /dev/ttyUSB0")
+    app.processEvents()
     # Create the "window" we'll be looking at.
     editor_window = Window()
+
     editor_window.set_clipboard(app.clipboard())
     # Create the "editor" that'll control the "window".
     editor = Editor(view=editor_window)
+
     # Setup the window.
     editor_window.closeEvent = editor.quit
     editor_window.setup(editor.theme, MICROPYTHON_APIS)
     editor.restore_session()
+
     # Connect the various buttons in the window to the editor.
     button_bar = editor_window.button_bar
     button_bar.connect("new", editor.new, "Ctrl+N")
@@ -77,7 +82,12 @@ def run():
     button_bar.connect("check", editor.check_code)
     button_bar.connect("help", editor.show_help)
     button_bar.connect("quit", editor.quit)
+
+    # Create the REPL and FileSystem panes then hide.
+    editor.connect_repl_fs()
+    
     # Finished starting up the application, so hide the splash icon.
     splash.finish(editor_window)
+
     # Stop the program after the application finishes executing.
     sys.exit(app.exec_())

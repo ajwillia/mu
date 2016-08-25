@@ -590,61 +590,75 @@ class Window(QStackedWidget):
         """
         # passing reference to self so LocalFileList can open a tab with a 
         # double-click
-        if self.fs is None:
-            self.fs = FileSystemPane(self.splitter, home, self)
-            self.splitter.addWidget(self.fs)
-            # save the index of the fs pane
-            self.fs_splitter_index = self.splitter.indexOf(self.fs)
-            
-            if self.splitter.count() == 2:
-                self.splitter.setSizes([66, 33])
-            else:
-                self.splitter.setSizes([66, 0, 33])
-                
-            self.fs.setFocus()
-            self.connect_zoom(self.fs)
+        self.fs = FileSystemPane(self.splitter, home, self)
+        self.splitter.addWidget(self.fs)
+        # save the index of the fs pane
+        self.fs_splitter_index = self.splitter.indexOf(self.fs)
+        
+        if self.splitter.count() == 2:
+            self.splitter.setSizes([66, 33])
         else:
-            self.fs.show()
-            self.fs.setFocus()
-            self.splitter.restoreState(self.fs_splitter_state)
+            self.splitter.setSizes([66, 0, 33])
+            
+        self.fs.setFocus()
+        self.connect_zoom(self.fs)
+        
+        # FileSystem pane is being created at startup now so hide this 
+        # pane
+        self.hide_fs()
 
-    def add_repl(self, repl):
+
+    def add_repl(self, mb_port):
         """
         Adds the REPL pane to the application.
         """
-        if self.repl is None:
-            self.repl = REPLPane(port=repl.port, clipboard=self.clipboard, theme=self.theme)
-            self.splitter.addWidget(self.repl)
-            self.repl_splitter_index = self.splitter.indexOf(self.repl)
-            if self.splitter.count() == 2:
-                self.splitter.setSizes([66, 33])
-            else:
-                self.splitter.setSizes([66, 0, 33])
-                
-            self.repl.setFocus()
-            self.connect_zoom(self.repl)
+        
+        self.repl = REPLPane(port=mb_port, clipboard=self.clipboard, theme=self.theme)
+        self.splitter.addWidget(self.repl)
+        self.repl_splitter_index = self.splitter.indexOf(self.repl)
+        if self.splitter.count() == 2:
+            self.splitter.setSizes([66, 33])
         else:
+            self.splitter.setSizes([66, 0, 33])
+            
+        self.repl.setFocus()
+        self.connect_zoom(self.repl)
+        
+        # REPL is being created at startup now so hide the pane and
+        # disonnect the session.
+        self.hide_repl()
+            
+    def hide_repl(self):
+        self.repl_splitter_state = self.splitter.saveState()
+        # self.repl.close()
+        self.repl.hide()
+        self.repl.active = False
+        logger.debug("Hiding the REPL Editor")
+        
+    def show_repl(self):
+        if not self.repl.connected:
             self.repl.connect()
-            self.repl.show()
-            self.repl.setFocus()
-            self.splitter.restoreState(self.repl_splitter_state)
-
-    def remove_filesystem(self):
-        """
-        Removes the file system pane from the application.
-        """
+        self.splitter.restoreState(self.repl_splitter_state)
+        self.repl.show()
+        self.repl.active = True
+        self.repl.setFocus()
+        logger.debug("Showing REPL Editor")
+        
+    def hide_fs(self):
         # save the splitter state for when we restore the fs pane
         self.fs_splitter_state = self.splitter.saveState()
         self.fs.hide()
-
-    def remove_repl(self):
-        """
-        Removes the REPL pane from the application.
-        """
-        # save the splitter state for when we restore the repl pane
-        self.repl_splitter_state = self.splitter.saveState()
-        self.repl.close()
-        self.repl.hide()
+        self.fs.active = False
+        logger.debug("Hiding the FS Pane")
+        
+    def show_fs(self):        
+        if self.repl.connected:
+            self.repl.close()
+        self.splitter.restoreState(self.fs_splitter_state)
+        self.fs.show()
+        self.fs.setFocus()
+        self.fs.active = True      
+        logger.debug("Showing the FS Pane")
 
     def set_theme(self, theme):
         """
@@ -772,7 +786,7 @@ class Window(QStackedWidget):
 
 
         self.splitter = QSplitter(Qt.Vertical)
-
+        
         widget_layout = QVBoxLayout()
         self.widget.setLayout(widget_layout)
 
@@ -804,6 +818,7 @@ class REPLPane(QTextEdit):
     def __init__(self, port, clipboard, theme='day', parent=None):
         super().__init__(parent)
         self.clipboard = clipboard
+        self.port = port
         self.setFont(Font().load())
         self.setAcceptRichText(False)
         self.setReadOnly(False)
@@ -813,8 +828,9 @@ class REPLPane(QTextEdit):
         self.serial.setPortName(port)
         self.connect()
         self.connected = True
+        self.active = True
         self.set_theme(theme)
-        
+               
     def connect(self):
         if self.serial.open(QIODevice.ReadWrite):
             self.serial.setBaudRate(115200)
@@ -826,14 +842,16 @@ class REPLPane(QTextEdit):
             self.connected = True
         else:
             port_name = self.serial.portName()
-            raise IOError("Cannot connect to device on port {}".format(port_name))     
+            raise IOError("Cannot connect to device on port {}".format(self.port))     
         
     def close(self):
         self.serial.close()
         self.connected = False
+        logger.debug("REPL closing connection to {}".format(self.port))
         
     def soft_reboot(self):
         self.serial.write(b'\x04')
+        logger.debug("REPL sending soft reboot to {}".format(self.port))
         
     def set_theme(self, theme):
         """
@@ -1182,13 +1200,14 @@ class FileSystemPane(QFrame):
         #microbit_fs_bb = FSButtonBar('MicroBit FS')
         local_fs_bb = FSButtonBar('Local FS')
         
-        
         layout.addWidget(self.microbit_fs.label, 0, 0)
         layout.addWidget(self.local_fs.label, 0, 1)
         layout.addWidget(self.microbit_fs.toolbar, 1, 0)
         layout.addWidget(self.local_fs.toolbar, 1, 1)
         layout.addWidget(self.microbit_fs, 2, 0)
         layout.addWidget(self.local_fs, 2, 1)
+        
+        self.active = True
         
 
     def set_theme(self, theme):

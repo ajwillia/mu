@@ -127,6 +127,24 @@ def clean_error(err):
             return decoded
     return 'There was an error.'
 
+def path_exists(path, serial=None):
+    command="""
+import os
+cur_path = os.getcwd()
+try:
+    os.chdir('{}')
+    os.chdir(cur_path)
+    print("True")
+except OSError:
+    print("False")
+""".format(path)
+    print(command)
+    out, err = execute([command,], serial)
+    if err:
+        raise IOError(clean_error(err))
+    
+    return ast.literal_eval(out.decode('utf-8'))
+
 
 def ls(serial):
     """
