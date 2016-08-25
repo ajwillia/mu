@@ -61,7 +61,6 @@ SOFT_REBOOT_ON_FLASH = True
 
 logger = logging.getLogger(__name__)
 
-
 def find_upython_device():
     """
     TODO - allow option to select which serial port to use.
@@ -69,11 +68,21 @@ def find_upython_device():
     """
     available_ports = QSerialPortInfo.availablePorts()
     try:
-        port = available_ports[0]
-        logger.info('Using port {}'.format(port.portName()))
-        return port.portName()
+        first_port = available_ports[0]
+        logger.info('Using port {}'.format(first_port.portName()))
+        
+        if os.name == 'posix':
+            # If we're on Linux or OSX reference the port is like this...
+            port = "/dev/{}".format(first_port.portName())
+        elif os.name == 'nt':
+            # On Windows simply return the port (e.g. COM0).
+            port = first_port.portName()
+                    
+        return port
     except IndexError:
         return None
+    
+
 
 def check_flake(filename, code):
     """
@@ -224,8 +233,7 @@ class Editor:
     def __init__(self, view):
         logger.info('Setting up editor.')
         self._view = view
-        self.repl = None
-        self.fs = None
+
         self.theme = 'day'
         self.user_defined_microbit_path = None
         if not os.path.exists(PYTHON_DIRECTORY):
@@ -233,7 +241,22 @@ class Editor:
             os.makedirs(PYTHON_DIRECTORY)
         if not os.path.exists(DATA_DIR):
             logger.debug('Creating directory: {}'.format(DATA_DIR))
-            os.makedirs(DATA_DIR)
+            os.makedirs(DATA_DIR)      
+        
+    def connect_repl_fs(self, mb_port=None):
+        """
+        Create the APPL and filesystem panes  at startup.  Hide them by default.
+        Disconnect APPL.  
+        
+        TODO:  Add a dialog at startup to pick the port 
+        """    
+        if mb_port is None:
+            mb_port = find_upython_device()
+        logger.debug("Connecting to device on {}".format(mb_port))
+        self.fs = self._view.add_filesystem(home=PYTHON_DIRECTORY)
+        self.repl = self._view.add_repl(mb_port=mb_port)
+
+        
 
     def restore_session(self):
         """
@@ -275,83 +298,72 @@ class Editor:
         self.save()  # save current script to disk
         
         # If the repl is active, close the session to flash
-        if SOFT_REBOOT_ON_FLASH:
-            restore_repl = False
-            if self.repl is not None:
-                restore_repl = True
-                self.toggle_repl()
+        restore_repl = False
+        if self._view.repl.active:
+            restore_repl = True
+            self.toggle_repl()
                 
-        if self.fs:
-            filename = os.path.basename(tab.path)
-            micro_path = self._view.fs.microbit_fs.current_dir
-            target = os.path.join(micro_path, filename)
-            microfs.put2(microfs.get_serial(), tab.path, target=target)
-            self._view.fs.microbit_fs.ls()    # update the fs to reflect the flashed file
-        else:
-            microfs.put2(microfs.get_serial(), tab.path, target=None)
+        filename = os.path.basename(tab.path)
+        micro_path = self._view.fs.microbit_fs.current_dir
+        target = os.path.join(micro_path, filename)
+        microfs.put2(microfs.get_serial(), tab.path, target=target)
+        self._view.fs.microbit_fs.ls()    # update the fs to reflect the flashed file
+
         
         # if there was a repl session before the flash, restore it and send
         # a soft reboot so the flash change will take affect
+        
         if SOFT_REBOOT_ON_FLASH:
-            if restore_repl:
-                self.toggle_repl()
-                self._view.repl.soft_reboot()
+            self._view.repl.connect()
+            self._view.repl.soft_reboot()
+            self._view.repl.close()
+            
+        if restore_repl:
+            self.toggle_repl()
 
     def add_fs(self):
         """
         If the REPL is not active, add the file system navigator to the UI.
         """
-        if self.repl is None:
-            if self.fs is None:
-                try:
-                    microfs.get_serial()
-                    self._view.add_filesystem(home=PYTHON_DIRECTORY)
-                    self.fs = True
-                except IOError:
-                    message = 'Could not find an attached BBC micro:bit.'
-                    information = ("Please make sure the device is plugged "
-                                   "into this computer.\n\nThe device must "
-                                   "have MicroPython flashed onto it before "
-                                   "the file system will work.\n\n"
-                                   "Finally, press the device's reset button "
-                                   "and wait a few seconds before trying "
-                                   "again.")
-                    self._view.show_message(message, information, parent = self._view)
-
-    def remove_fs(self):
-        """
-        If the REPL is not active, remove the file system navigator from
-        the UI.
-        """
-        if self.fs is None:
-            raise RuntimeError("File system not running")
-        self._view.remove_filesystem()
-        self.fs = None
+        
+        try:
+            # microfs.get_serial()
+            self._view.add_filesystem(home=PYTHON_DIRECTORY)
+            self.fs = True
+        except IOError:
+            message = 'Could not find an attached BBC micro:bit.'
+            information = ("Please make sure the device is plugged "
+                           "into this computer.\n\nThe device must "
+                           "have MicroPython flashed onto it before "
+                           "the file system will work.\n\n"
+                           "Finally, press the device's reset button "
+                           "and wait a few seconds before trying "
+                           "again.")
+            self._view.show_message(message, information, parent = self._view)
 
     def toggle_fs(self):
         """
         If the file system navigator is active enable it. Otherwise hide it.
         If the REPL is active, display a message.
         """
-        if self.repl is not None:
-            self.remove_repl()
-        
-        if self.fs is None:
-            self.add_fs()
+        if self._view.repl.active:
+            self._view.hide_repl()
+            
+        if self._view.fs.active:
+            self._view.hide_fs()
         else:
-            self.remove_fs()
+            self._view.show_fs()
 
-    def add_repl(self):
+    def add_repl(self, mb_port=None):
         """
         Detect a connected BBC micro:bit and if found, connect to the
         MicroPython REPL and display it to the user.
         """
-        if self.fs:
-            raise RuntimeError("File system already connected")
-        logger.info('Starting REPL in UI.')
-        if self.repl is not None:
-            raise RuntimeError("REPL already running")
-        mb_port = find_upython_device()
+
+        if mb_port is None:
+            mb_port = find_upython_device()
+            
+        logger.debug("REPL connecting to port {}".format(mb_port))
         if mb_port:
             try:
                 self.repl = REPL(port=mb_port)
@@ -374,26 +386,18 @@ class Editor:
                            " a few seconds before trying again.")
             self._view.show_message(message, information, parent = self._view)
 
-    def remove_repl(self):
-        """
-        If there's an active REPL, disconnect and hide it.
-        """
-        if self.repl is None:
-            raise RuntimeError("REPL not running")
-        self._view.remove_repl()
-        self.repl = None
 
     def toggle_repl(self):
         """
         If the REPL is active, close it; otherwise open the REPL.
         """
-        if self.fs is not None:
-            self.remove_fs()
-
-        if self.repl is None:
-            self.add_repl()
+        if self._view.fs.active:
+            self._view.hide_fs()
+            
+        if self._view.repl.active:
+            self._view.hide_repl()
         else:
-            self.remove_repl()
+            self._view.show_repl()
 
     def toggle_theme(self):
         """

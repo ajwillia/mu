@@ -138,12 +138,17 @@ try:
 except OSError:
     print("False")
 """.format(path)
-    print(command)
+
     out, err = execute([command,], serial)
     if err:
         raise IOError(clean_error(err))
     
     return ast.literal_eval(out.decode('utf-8'))
+
+def mkdir(path, serial=None):
+    out, err = execute(["import os", "os.mkdir('{}')".format(path)], serial)
+    if err:
+        raise IOError(clean_error(err))
 
 
 def ls(serial):
@@ -186,6 +191,42 @@ print(files)\n""".format(d)
     if err:
         raise IOError(clean_error(err))
     return ast.literal_eval(out.decode('utf-8')) 
+
+def is_file(serial, path):
+    """
+        Checks to see if path is a file; returns True if it is a file
+    """
+    command = """
+import os
+if os.stat('{}')[0] == 32768:
+    print("True")
+else:
+    print("False")    
+""".format(path)
+    out,err = execute([command,], serial)
+    if err:
+        raise IOError(clean_error(err))
+    
+    return ast.literal_eval(out.decode('utf-8').strip())    
+
+def is_dir(serial, path):
+    """
+        Checks to see if path is a file; returns True if it is a file
+    """
+    command = """
+import os
+if os.stat('{}')[0] == 16384:
+    print("True")
+else:
+    print("False")    
+""".format(path)
+    
+    out,err = execute([command,], serial)
+    if err:
+        raise IOError(clean_error(err))
+    
+    return ast.literal_eval(out.decode('utf-8').strip())
+    
 
 def getcwd(serial=None):
     out, err = execute(['import os',
@@ -241,7 +282,7 @@ def put(serial, filename):
         raise IOError(clean_error(err))
     return True
 
-def put2(serial, filename, target=None):
+def put2(filename, target=None, serial=None):
     """
     Puts a referenced file on the LOCAL file system onto the
     file system on the BBC micro:bit.

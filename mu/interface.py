@@ -50,6 +50,89 @@ DAY_STYLE = load_stylesheet('day.css')
 
 logger = logging.getLogger(__name__)
 
+def umakedirs(name, serial):
+    """
+    umakedirs(name, serial)
+
+    Super-mkdir for the microfs.  Modified from os.makedirs; 
+    
+    create a leaf directory and all intermediate ones.  Works like
+    mkdir, except that any intermediate path segment (not just the rightmost)
+    will be created if it does not exist. 
+
+    This is recursive.
+
+    """
+    head, tail = os.path.split(name)
+    if not tail:
+        head, tail = os.path.split(head)
+    if head and tail and not microfs.path_exists(head, serial):
+        try:
+            umakedirs(head, serial)
+        except FileExistsError:
+            # be happy if someone already created the path
+            pass
+        cdir = microfs.getcwd(serial)
+        if isinstance(tail, bytes):
+            cdir = bytes(curdir, 'ASCII')
+        if tail == cdir:           # xxx/newdir/. exists if xxx/newdir exists
+            return
+    try:
+        microfs.mkdir(name, serial)
+    except OSError as e:
+        # ignore the exception of the directory already existing
+        pass
+
+
+def ucopytree(src, dst, serial):
+    """
+    Recursively copy a directory tree from the local system (src) to the
+    micropython device (dst).
+       
+    Modified from shutil.copytree
+    """
+    
+    names = os.listdir(src)
+
+
+    umakedirs(dst, serial)
+    errors = []
+    for name in names:
+        
+        srcname = os.path.join(src, name)
+        dstname = os.path.join(dst, name)
+        try:
+            if os.path.isdir(srcname):
+                ucopytree(srcname, dstname, serial)
+            else:
+                # Will raise a SpecialFileError for unsupported file types
+                microfs.put2(srcname, target=dstname, serial=serial)
+        # catch the Error from the recursive ucopytree so that we can
+        # continue with other files
+        except Error as err:
+            errors.extend(err.args[0])
+        except OSError as why:
+            errors.append((srcname, dstname, str(why)))
+    
+    if errors:
+        raise Error(errors)
+    return dst
+
+def urmtree(path, serial):
+    """
+    Recursively delete a directory tree and all contents        
+    """
+
+    for item in microfs.ls2(serial, d=path):
+        name, item_type = item
+        full_path = os.path.join(path, name)
+        if item_type == "D":
+            full_path = os.path.join(path, name)
+            urmtree(full_path, serial)
+            #microfs.rm(serial, full_path)
+        else:
+            microfs.rm(serial, full_path)
+    microfs.rm(serial, path)
 
 class Font:
     """
@@ -628,7 +711,7 @@ class Window(QStackedWidget):
         # disonnect the session.
         self.hide_repl()
             
-    def hide_repl(self):
+    def hide_repl(self):            
         self.repl_splitter_state = self.splitter.saveState()
         # self.repl.close()
         self.repl.hide()
@@ -636,8 +719,13 @@ class Window(QStackedWidget):
         logger.debug("Hiding the REPL Editor")
         
     def show_repl(self):
+        # if microbit serial is connected, close before opening REPL connection
+        if self.fs.microbit_fs.connected:
+            self.fs.microbit_fs.close_serial()
+                    
         if not self.repl.connected:
             self.repl.connect()
+            
         self.splitter.restoreState(self.repl_splitter_state)
         self.repl.show()
         self.repl.active = True
@@ -652,8 +740,13 @@ class Window(QStackedWidget):
         logger.debug("Hiding the FS Pane")
         
     def show_fs(self):        
+        # if the REPL is connected, close before opening a microfs connection
         if self.repl.connected:
             self.repl.close()
+            
+        if not self.fs.microbit_fs.connected:
+            self.fs.microbit_fs.open_serial()
+            
         self.splitter.restoreState(self.fs_splitter_state)
         self.fs.show()
         self.fs.setFocus()
@@ -1021,6 +1114,8 @@ class MicrobitFileList(MuFileList):
         self.window = window
         self.home = microfs.getcwd()
         self.current_dir = self.home
+        self.serial = microfs.get_serial()   # get a serial object from microfs
+        self.connected = True
         self.setDragDropMode(QListWidget.DragDrop)
         self.itemDoubleClicked.connect(self.itemDoubleClickedEvent)
         
@@ -1032,8 +1127,22 @@ class MicrobitFileList(MuFileList):
         
         self.ls()
         
+    def open_serial(self):
+        """
+            connect to the serial port
+        """
+        self.serial.open()
+        self.connected = True
+        
+    def close_serial(self):
+        """
+            close the microfs serial port
+        """
+        self.serial.close()
+        self.connected = False
+        
     def ls(self):
-        microbit_files = microfs.ls2(microfs.get_serial(), d=self.current_dir)
+        microbit_files = microfs.ls2(self.serial, d=self.current_dir)
         microbit_files.sort(key=lambda x: (x[1], x[0]))
         self.parse_ls(microbit_files)
 
@@ -1043,15 +1152,28 @@ class MicrobitFileList(MuFileList):
         if isinstance(source, LocalFileList):
             local_filename = source.currentItem().text()
             local_fullpath = source.currentItem().data(256)[1]
-            micro_fullpath = os.path.join(self.current_dir, local_filename)
-            logger.info("Putting {} to {}".format(local_fullpath, micro_fullpath))
-            try:
-                with microfs.get_serial() as serial:
-                    logger.info(serial.port)
-                    microfs.put2(serial, local_fullpath, target=micro_fullpath)
-                super().dropEvent(event)
-            except Exception as ex:
-                logger.error(ex)
+             
+            if source.currentItem().data(256)[0] == "D":
+                head, tail = os.path.split(local_fullpath)
+                micro_fullpath = os.path.join(self.current_dir, tail)
+                logger.info("Copying {} to {}".format(local_fullpath, 
+                                                      micro_fullpath))
+                try:
+                    ucopytree(local_fullpath, micro_fullpath, self.serial)
+                    super().dropEvent(event)
+                except Exception as ex:
+                    logger.error(ex)                
+            else:
+                micro_fullpath = os.path.join(self.current_dir, local_filename)
+                logger.info("Copying {} to {}".format(local_fullpath, 
+                                                      micro_fullpath))
+                try:
+                    microfs.put2(local_fullpath, target=micro_fullpath, 
+                                 serial=self.serial)
+                except Exception as ex:
+                    logger.error(ex)                    
+
+            self.ls()
         self.enable(source)
 
     def contextMenuEvent(self, event):
@@ -1061,13 +1183,16 @@ class MicrobitFileList(MuFileList):
         if action == delete_action:
             self.setDisabled(True)
             self.setAcceptDrops(False)
-            microbit_filename = self.currentItem().data(256)[1]
-            logger.info("Deleting {}".format(microbit_filename))
+            
+            dir_or_file = self.currentItem().data(256)[1]
             try:
-                with microfs.get_serial() as serial:
-                    logger.info(serial.port)
-                    microfs.rm(serial, microbit_filename)
+                if self.currentItem().data(256)[0] == "D":
+                    urmtree(dir_or_file, self.serial)
+                else:
+                    microfs.rm(self.serial, dir_or_file)
                 self.takeItem(self.currentRow())
+                
+                logger.info("Deleting {}".format(microbit_filename))
             except Exception as ex:
                 logger.error(ex)
             self.setDisabled(False)
