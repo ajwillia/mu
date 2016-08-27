@@ -297,29 +297,56 @@ class Editor:
             return
         self.save()  # save current script to disk
         
-        # If the repl is active, close the session to flash
-        restore_repl = False
-        if self._view.repl.active:
-            restore_repl = True
-            self.toggle_repl()
-                
+        # If the REPL is connected, close the connection to flash 
+        # but remember to open it back later
+        restore_repl_session = False
+        if self._view.repl.connected:
+            restore_repl_session = True
+            self._view.repl.close()
+            
+
+        # if the FS is connected, make sure it is open after finishing
+        # otherwise, open the FS serial connection for flashing
+        reconnect_fs = False
+        if self._view.fs.microbit_fs.connected:
+            reconnect_fs = True
+        else:
+            self._view.fs.microbit_fs.open_serial()
+
+
+        # get the filename and current directory from the device                
         filename = os.path.basename(tab.path)
         micro_path = self._view.fs.microbit_fs.current_dir
         target = os.path.join(micro_path, filename)
-        microfs.put2(microfs.get_serial(), tab.path, target=target)
-        self._view.fs.microbit_fs.ls()    # update the fs to reflect the flashed file
-
         
-        # if there was a repl session before the flash, restore it and send
-        # a soft reboot so the flash change will take affect
+        # flash the file to the current directory on the device
+        microfs.put2(tab.path, target=target, 
+                     serial=self._view.fs.microbit_fs.serial)
         
+        # this could be a new file so update the file pane
+        self._view.fs.microbit_fs.ls()    
+        
+                
         if SOFT_REBOOT_ON_FLASH:
+            # close the FS serial connection
+            self._view.fs.microbit_fs.close_serial()
+            # open the REPL connection
             self._view.repl.connect()
+            # soft-reboot the device so the flash changes are made active
             self._view.repl.soft_reboot()
-            self._view.repl.close()
             
-        if restore_repl:
-            self.toggle_repl()
+            if reconnect_fs:
+                self._view.repl.close()
+                self._view.fs.microbit_fs.open_serial()
+            if not restore_repl_session:
+                self._view.repl.close()
+            
+        else:
+            if restore_repl_session:
+                self._view.fs.microbit_fs.close_serial()
+                self._view.repl.connect()
+            elif not restore_repl_session:
+                self._view.fs.microbit_fs.close_serial()
 
     def add_fs(self):
         """
@@ -329,7 +356,6 @@ class Editor:
         try:
             # microfs.get_serial()
             self._view.add_filesystem(home=PYTHON_DIRECTORY)
-            self.fs = True
         except IOError:
             message = 'Could not find an attached BBC micro:bit.'
             information = ("Please make sure the device is plugged "

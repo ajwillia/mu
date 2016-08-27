@@ -27,7 +27,9 @@ from PyQt5.QtWidgets import (QToolBar, QAction, QStackedWidget, QDesktopWidget,
                              QTabWidget, QFileDialog, QMessageBox, QTextEdit,
                              QFrame, QListWidget, QGridLayout, QLabel, QMenu,
                              QListWidgetItem)
-from PyQt5.QtGui import QKeySequence, QColor, QTextCursor, QFontDatabase
+from PyQt5.QtGui import (QKeySequence, QColor, QTextCursor, 
+                         QFontDatabase, QProgressDialog)
+                         
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
 from PyQt5.QtSerialPort import QSerialPort
 from mu.contrib import microfs
@@ -689,6 +691,7 @@ class Window(QStackedWidget):
         # FileSystem pane is being created at startup now so hide this 
         # pane
         self.hide_fs()
+        self.fs.microbit_fs.close_serial()
 
 
     def add_repl(self, mb_port):
@@ -710,6 +713,7 @@ class Window(QStackedWidget):
         # REPL is being created at startup now so hide the pane and
         # disonnect the session.
         self.hide_repl()
+        self.repl.close()
             
     def hide_repl(self):            
         self.repl_splitter_state = self.splitter.saveState()
@@ -896,8 +900,8 @@ class Window(QStackedWidget):
         self.set_theme(theme)
         self.show()
         self.autosize_window()
-
-
+                    
+        
 class REPLPane(QTextEdit):
     """
     REPL = Read, Evaluate, Print, Loop.
@@ -920,16 +924,26 @@ class REPLPane(QTextEdit):
         self.serial = QSerialPort(self)
         self.serial.setPortName(port)
         self.connect()
-        self.connected = True
         self.active = True
         self.set_theme(theme)
+        self.cc = None   # marker for control character
+        self.cc_count = ""
+        
+    def show(self):
+        self.active = True
+        super().show()
+        
+    def hide(self):
+        self.active = False
+        super().hide()
                
     def connect(self):
         if self.serial.open(QIODevice.ReadWrite):
             self.serial.setBaudRate(115200)
-            self.serial.readyRead.connect(self.on_serial_read)
+            self.serial.readyRead.connect(self.on_serial_read2)
+            
             # clear the text
-            self.clear()
+            # self.clear()
             # Send a Control-C
             self.serial.write(b'\x03')
             self.connected = True
@@ -954,6 +968,63 @@ class REPLPane(QTextEdit):
             self.setStyleSheet(DAY_STYLE)
         else:
             self.setStyleSheet(NIGHT_STYLE)
+            
+    def on_serial_read2(self):
+        """
+        Read from the serial port one byte at a time.
+        """
+        while not self.serial.atEnd():
+            self.process_bytes2(self.serial.read(1))
+        
+    def process_bytes2(self, c):
+        """
+            Re-write of process_bytes.  At times, the serial response from 
+            serial_read would not have the full control escape sequence in a 
+            single read.  This caused process_bytes to partially decode the
+            inbound escape sequence which then caused garbled characters in the
+            REPL pane.
+            
+            Re-written to analyze a single byte/character at a time.
+        """
+        tc = self.textCursor()
+        # The text cursor must be on the last line of the document. If it isn't
+        # then move it there.
+        if self.cc is None:
+            while tc.movePosition(QTextCursor.Down):
+                pass
+            if c == b'\x08':
+                # left arrow
+                tc.movePosition(QTextCursor.Left)
+                self.setTextCursor(tc)
+            elif c == b'\r' or c == b'':
+                # ignore line feed
+                pass
+            elif c == b'\x1b':
+                self.cc = c
+            else:
+                tc.deleteChar()
+                self.setTextCursor(tc)            
+                self.insertPlainText(chr(c[0]))
+        elif c.isdigit():
+            self.cc_count += c.decode('ascii')
+        
+        elif c == b'K':
+            tc.movePosition(QTextCursor.EndOfLine, mode=QTextCursor.KeepAnchor)
+            tc.removeSelectedText()
+            self.setTextCursor(tc)
+            self.cc = None
+        elif c == b'D':
+            if self.cc_count == "":
+                self.cc_count = "1"
+            tc.movePosition(QTextCursor.Left, n=int(self.cc_count))
+            self.cc_count = ""
+            self.setTextCursor(tc)
+            self.cc = None
+        
+        self.ensureCursorVisible()
+        
+        
+                
 
     def on_serial_read(self):
         """
@@ -980,6 +1051,10 @@ class REPLPane(QTextEdit):
             msg = b'\x1B[C'
         elif key == Qt.Key_Left:
             msg = b'\x1B[D'
+        elif key == Qt.Key_Home:
+            msg = b'\x1b[H'
+        elif key == Qt.Key_End:
+            msg = b'\x1bOF'
         elif data.modifiers() == Qt.ControlModifier:
         #     # Handle the Control key.  I would've expected us to have to test
         #     # for Qt.ControlModifier, but on (my!) OSX Qt.MetaModifier does
@@ -988,9 +1063,12 @@ class REPLPane(QTextEdit):
         #     # see http://doc.qt.io/qt-5/qt.html#KeyboardModifier-enum
             if key == Qt.Key_V:
                 msg = self.clipboard.text()
+            elif key == Qt.Key_Left:
+                msg = b'\x1B1;5D'
             elif Qt.Key_A <= key <= Qt.Key_Z:
         #         # The microbit treats an input of \x01 as Ctrl+A, etc.
                  msg = bytes([1 + key - Qt.Key_A])
+        # logger.debug(msg)
         self.serial.write(msg)
 
     def process_bytes(self, bs):
@@ -1150,6 +1228,7 @@ class MicrobitFileList(MuFileList):
         source = event.source()
         self.disable(source)
         if isinstance(source, LocalFileList):
+            
             local_filename = source.currentItem().text()
             local_fullpath = source.currentItem().data(256)[1]
              
@@ -1333,6 +1412,14 @@ class FileSystemPane(QFrame):
         layout.addWidget(self.local_fs, 2, 1)
         
         self.active = True
+        
+    def show(self):
+        self.active = True
+        super().show()
+        
+    def hide(self):
+        self.active = False
+        super().hide()        
         
 
     def set_theme(self, theme):
